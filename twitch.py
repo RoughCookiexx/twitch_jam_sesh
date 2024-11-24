@@ -47,8 +47,10 @@ class TwitchJamSesh:
                 f"  {','.join(self.song_description)}",
                 client)
 
-            tags = chatgpt.send_message_to_chatgpt(f"Take the following content and reply with only a 5 word description for a song: {reply}", client)
-            title = chatgpt.send_message_to_chatgpt(f"Take the following content and reply with only a title for a song:{reply}", client)
+            tags = chatgpt.send_message_to_chatgpt(
+                f"Take the following content and reply with only a 5 word description for a song: {reply}", client)
+            title = chatgpt.send_message_to_chatgpt(
+                f"Take the following content and reply with only a title for a song:{reply}", client)
 
             print(title)
             print(tags)
@@ -124,12 +126,11 @@ class TwitchJamSesh:
         pygame.mixer.music.play()
 
 
-
 if __name__ == '__main__':
     pygame.mixer.init()
     loop = asyncio.get_event_loop()
     jamsesh = TwitchJamSesh()
 
-    client = OpenAI(api_key=chatgpt.API_KEY)
+    client = OpenAI(api_key=secrets.CHAT_GPT_API_KEY)
 
     loop.run_until_complete(jamsesh.listen_to_redemptions())
