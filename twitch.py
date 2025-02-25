@@ -1,5 +1,6 @@
 import threading
 import time
+import pyttsx3
 from datetime import datetime
 
 from openai import OpenAI
@@ -27,10 +28,10 @@ class TwitchJamSesh:
     def __init__(self):
         self.song_description = []
         self.suno = SunoDoodad()
-        self.spoken_text = []
+        self.tts_engine = pyttsx3.init()
 
     def begin(self):
-        mic_input = MicInput(self.spoken_text)
+        mic_input = MicInput(self.song_description)
 
         threads = [
             threading.Thread(target=mic_input.listen_for_keyword),
@@ -44,34 +45,40 @@ class TwitchJamSesh:
         for thread in threads:
             thread.join()
 
+    def speak(self, text):
+        self.tts_engine.say(text)
+        self.tts_engine.runAndWait()
+
+
     async def read_message(self, message: ChatMessage):
         if 'Cheer' not in message.text:
             self.song_description.append(message.text)
 
         print(self.song_description)
 
-        MESSAGE_THRESHOLD = 25
+        MESSAGE_THRESHOLD = 20
 
         with open('message_count_down', "w") as file:
             file.write(f'NEXT SONG: {len(self.song_description)} / {MESSAGE_THRESHOLD}')
 
         if len(self.song_description) >= MESSAGE_THRESHOLD:
-            print(f"  {','.join(self.spoken_text)}")
-            my_summary = chatgpt.send_message_to_chatgpt(
-                "Re-word these words I recorded. Condense it down to a short paragraph.\n"
-                "\n{}".format("\n".join(self.spoken_text)),
-                client
-            )
-            print(my_summary)
-
-            self.song_description.append(my_summary)
+            # print(f"  {','.join(self.spoken_text)}")
+            # my_summary = chatgpt.send_message_to_chatgpt(
+            #     "Re-word these words I recorded. Condense it down to a short paragraph.\n"
+            #     "\n{}".format("\n".join(self.spoken_text)),
+            #     client
+            # )
+            # print(my_summary)
+            #
+            # self.song_description.append(my_summary)
 
             reply = chatgpt.send_message_to_chatgpt(
                 f"Take the contents from below, and turn it into a short song. Generate the lyrics for us."
-                f"Keep the lyrics between 750 and 1,250 characters. "
+                f"Keep the lyrics between 750 and 1,250 characters."
+                f"Don't be afraid to go off on a bit of a tangent. "
                 f"Annotate sections of the song like this: [INTRO], [VERSE 1], etc. etc. "
                 f"Only return the lyrics, no introduction. no conclusion. "
-                f"Use your own words aside from "
+                f"Use your own words aside from a direct quote or two."
                 f"no 'here is your summary bullshit'. "
                 f"just get to the point.\n"
                 f"  {','.join(self.song_description)}",
@@ -80,7 +87,7 @@ class TwitchJamSesh:
             tags = chatgpt.send_message_to_chatgpt(
                 f"Decide the style of music the following song should be written in. Use 10 words or less. Just reply with descriptors: {reply}", client)
             title = chatgpt.send_message_to_chatgpt(
-                f"Take the following content and reply with only a title for a song:{reply}", client)
+                f"Take the following content and reply with only a title for a song (No quotation marks):{reply}", client)
 
             print(title)
             print(tags)
@@ -114,7 +121,6 @@ class TwitchJamSesh:
             #
             # await self.play_audio_stream(data[0]['audio_url'], data[0]['lyric'], data[0]['title'])
 
-            self.spoken_text = []
             self.song_description = []
 
     async def on_ready(self, ready_event: EventData):
