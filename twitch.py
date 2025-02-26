@@ -16,6 +16,7 @@ import yt_dlp
 
 import chatgpt
 import secrets
+from descriptors import generate_song_description
 from main import get_audio_information, custom_generate_audio
 from mic_input import MicInput
 from suno_doodad import SunoDoodad
@@ -56,7 +57,7 @@ class TwitchJamSesh:
 
         print(self.song_description)
 
-        MESSAGE_THRESHOLD = 20
+        MESSAGE_THRESHOLD = 3
 
         with open('message_count_down', "w") as file:
             file.write(f'NEXT SONG: {len(self.song_description)} / {MESSAGE_THRESHOLD}')
@@ -84,10 +85,11 @@ class TwitchJamSesh:
                 f"  {','.join(self.song_description)}",
                 client)
 
-            tags = chatgpt.send_message_to_chatgpt(
-                f"Decide the style of music the following song should be written in. Use 10 words or less. Just reply with descriptors: {reply}", client)
+            tags = generate_song_description()
+            # tags = chatgpt.send_message_to_chatgpt(
+            #     f"Decide the style of music the following song should be written in. Use 10 words or less. Just reply with descriptors: {reply}", client)
             title = chatgpt.send_message_to_chatgpt(
-                f"Take the following content and reply with only a title for a song (No quotation marks):{reply}", client)
+                f"Take the following content and reply with only a title for a song. Return only alphanumeric characters: {reply}", client)
 
             print(title)
             print(tags)
