@@ -75,7 +75,6 @@ class SunoDoodad:
         time.sleep(random.uniform(1, 5))  # Wait for processing
         action.move_to_element(submit_button).click().perform()
 
-
         time.sleep(random.uniform(25, 35))  # Wait for processing
         tts = gTTS(text=f'NOW PLAYING: {title}', lang='en-ca')
         file_name = f'tts/{time.time()}.mp3'
@@ -83,7 +82,6 @@ class SunoDoodad:
         pygame.mixer.music.load(file_name)
         pygame.mixer.music.play()
         self.click_new_song()
-
 
         print("🎵 Song is playing!")
 

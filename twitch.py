@@ -12,6 +12,7 @@ from twitchAPI.chat import Chat, EventData
 
 import asyncio
 import pygame
+import tkinter
 import yt_dlp
 
 import chatgpt
@@ -19,9 +20,11 @@ import secrets
 from descriptors import generate_song_description
 from main import get_audio_information, custom_generate_audio
 from mic_input import MicInput
+from obs_timer import ObsTimer
 from suno_doodad import SunoDoodad
 
 ALL_MESSAGES = ''
+MINUTES_BETWEEN_SONGS = 0.1
 
 
 class TwitchJamSesh:
@@ -30,13 +33,26 @@ class TwitchJamSesh:
         self.song_description = []
         self.suno = SunoDoodad()
         self.tts_engine = pyttsx3.init()
+        self.obs_timer = None
 
     def begin(self):
         mic_input = MicInput(self.song_description)
 
+        root = tkinter.Tk()
+        root.title("OBS Timer")
+        root.geometry("300x100")
+
+        timer_label = tkinter.Label(root, text="00:00", font=("Helvetica", 24))
+        timer_label.pack(expand=True)
+        self.obs_timer = ObsTimer(event=self.trigger_song_creation, label=timer_label, tk=root)
+        self.obs_timer.start_timer(MINUTES_BETWEEN_SONGS)
+
+        root.mainloop()
+
         threads = [
             threading.Thread(target=mic_input.listen_for_keyword),
-            threading.Thread(target=self.twitch_listener_thread)
+            threading.Thread(target=self.twitch_listener_thread),
+            threading.Thread(target=self.obs_timer.update_timer)
         ]
         # Start all the threads
         for thread in threads:
@@ -50,29 +66,14 @@ class TwitchJamSesh:
         self.tts_engine.say(text)
         self.tts_engine.runAndWait()
 
-
     async def read_message(self, message: ChatMessage):
         if 'Cheer' not in message.text:
             self.song_description.append(message.text)
 
         print(self.song_description)
 
-        MESSAGE_THRESHOLD = 3
-
-        with open('message_count_down', "w") as file:
-            file.write(f'NEXT SONG: {len(self.song_description)} / {MESSAGE_THRESHOLD}')
-
-        if len(self.song_description) >= MESSAGE_THRESHOLD:
-            # print(f"  {','.join(self.spoken_text)}")
-            # my_summary = chatgpt.send_message_to_chatgpt(
-            #     "Re-word these words I recorded. Condense it down to a short paragraph.\n"
-            #     "\n{}".format("\n".join(self.spoken_text)),
-            #     client
-            # )
-            # print(my_summary)
-            #
-            # self.song_description.append(my_summary)
-
+    def trigger_song_creation(self):
+        try:
             reply = chatgpt.send_message_to_chatgpt(
                 f"Take the contents from below, and turn it into a short song. Generate the lyrics for us."
                 f"Keep the lyrics between 750 and 1,250 characters."
@@ -86,10 +87,9 @@ class TwitchJamSesh:
                 client)
 
             tags = generate_song_description()
-            # tags = chatgpt.send_message_to_chatgpt(
-            #     f"Decide the style of music the following song should be written in. Use 10 words or less. Just reply with descriptors: {reply}", client)
             title = chatgpt.send_message_to_chatgpt(
-                f"Take the following content and reply with only a title for a song. Return only alphanumeric characters: {reply}", client)
+                f"Take the following content and reply with only a title for a song. Return only alphanumeric characters: {reply}",
+                client)
 
             print(title)
             print(tags)
@@ -98,31 +98,11 @@ class TwitchJamSesh:
             reply = reply[:2000]
 
             self.suno.generate_suno_song(reply, tags, title)
-
-            # data = custom_generate_audio({
-            #     "prompt": reply,
-            #     "tags": tags,
-            #     "title": title,
-            #     "make_instrumental": False,
-            #     "wait_audio": False
-            # })
-            #
-            # ids = f"{data[0]['id']},{data[1]['id']}"
-            # print(f"ids: {ids}")
-            #
-            # for _ in range(60):
-            #     data = get_audio_information(ids)
-            #     if data[0]["status"] == 'streaming':
-            #         print(f"{data[0]['id']} ==> {data[0]['audio_url']}")
-            #         print(f"{data[1]['id']} ==> {data[1]['audio_url']}")
-            #         break
-            #     # sleep 5s
-            #     time.sleep(5)
-            #
-            # time.sleep(15)
-            #
-            # await self.play_audio_stream(data[0]['audio_url'], data[0]['lyric'], data[0]['title'])
-
+        except Exception:
+            self.tts_engine.say("SONG GENERATION FAILED. GO WATCH MORE PRIMAGEN.")
+            pass
+        finally:
+            self.obs_timer.start_timer(MINUTES_BETWEEN_SONGS)
             self.song_description = []
 
     async def on_ready(self, ready_event: EventData):
