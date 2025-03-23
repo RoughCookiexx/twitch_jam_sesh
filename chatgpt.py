@@ -4,7 +4,7 @@ from openai import OpenAI
 from secrets import CHAT_GPT_API_KEY
 
 
-def send_message_to_chatgpt(message, client):
+def send_message_to_chatgpt(message, client, temperature=0.8):
 
     messages = []
     messages.append(
@@ -13,7 +13,8 @@ def send_message_to_chatgpt(message, client):
 
     response = client.chat.completions.create(model='gpt-3.5-turbo',
                                         messages=messages,
-                                        max_tokens=500)
+                                        max_tokens=500,
+                                        temperature=temperature)
 
     return response.choices[0].message.content
 

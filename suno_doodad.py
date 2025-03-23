@@ -27,9 +27,6 @@ class SunoDoodad:
         self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         })
-        tts = gTTS(text=f'GENERATING SONG', lang='en-ca')
-        file_name = f'tts/generating.mp3'
-        tts.save(file_name)
 
     def human_like_typing(self, element, text):
         """Types text into an element with slight variations to mimic human behavior."""
@@ -74,56 +71,6 @@ class SunoDoodad:
         action = ActionChains(self.driver)
         time.sleep(random.uniform(1, 5))  # Wait for processing
         action.move_to_element(submit_button).click().perform()
-
-        time.sleep(random.uniform(25, 35))  # Wait for processing
-        tts = gTTS(text=f'NOW PLAYING: {title}', lang='en-ca')
-        file_name = f'tts/{time.time()}.mp3'
-        tts.save(file_name)
-        pygame.mixer.music.load(file_name)
-        pygame.mixer.music.play()
-        self.click_new_song()
-
-        print("🎵 Song is playing!")
-
-        self.wait_for_song_change()
-
-        pause_button = self.driver.find_element(By.CSS_SELECTOR, 'button[aria-label="Playbar: Pause button"]')
-        action.move_to_element(pause_button).click().perform()
-
-    def wait_for_song_change(self):
-        """Waits until the currently playing song changes by monitoring the aria-label."""
-        last_song = self.driver.find_element(By.CSS_SELECTOR, 'span[aria-label^="Playbar:"]').get_attribute(
-            "aria-label")
-
-        while True:
-            time.sleep(1)  # Prevent hammering the page every millisecond
-            current_song = self.driver.find_element(By.CSS_SELECTOR, 'span[aria-label^="Playbar:"]').get_attribute(
-                "aria-label")
-
-            if current_song != last_song:  # If the text changed, the song changed
-                print(f"🎵 Song changed! New song: {current_song}")
-                return current_song  # Return the new song title or whatever
-
-        # self.driver.quit()
-
-    def click_new_song(self):
-        self.driver.refresh()
-        time.sleep(random.uniform(3, 5))  # Wait for processing
-        elements = self.driver.find_elements(By.CSS_SELECTOR, '[data-testid="song-row-play-button"]')
-
-        # Check for the second element and find the button within it
-        if len(elements) > 1:
-            second_element = elements[1]
-
-            # You could also highlight the second element here for visualization if needed
-            self.driver.execute_script("arguments[0].style.border = '2px solid red'", second_element)
-            second_element.click()
-            #
-            # # Find the first button inside the second element
-            # first_button = second_element.find_element(By.TAG_NAME, "button")
-            #
-            # # Click the button
-            # first_button.click()
 
 
 if __name__ == "__main__":
