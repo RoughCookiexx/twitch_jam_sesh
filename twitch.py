@@ -116,7 +116,7 @@ class TwitchJamSesh:
     def trigger_song_creation(self):
         try:
             lyrics = chatgpt.send_message_to_chatgpt(
-                f"Take the contents from below, and turn it into a short song. Generate the lyrics for us."
+                f"Take the contents from below, and turn it into a short song. Create the lyrics for us in your own words."
                 f"Keep the lyrics between 750 and 1,250 characters."
                 f"Don't be afraid to go off on a bit of a tangent. "
                 f"Annotate sections of the song like this: [INTRO], [VERSE 1], etc. etc. "
@@ -135,6 +135,7 @@ class TwitchJamSesh:
             blurb = chatgpt.send_message_to_chatgpt(
                 f"Take the following lyrics and create a little blurb a caller might say to prompt the DJ to play this song. "
                 f"Give a little preface, how you're feeling, and why you want to hear the type of song you want to hear."
+                f"Don't ask for a specific song, just something that would prompt the DJ to choose this song."
                 f" \n\n {lyrics}",
                 client,
                 1)
@@ -148,9 +149,12 @@ class TwitchJamSesh:
             self.clipboard_queue.queue_clipboard([lyrics, tags, title])
 
             # self.suno.generate_suno_song(lyrics, tags, title)
-
-            self.change_scene("Radio Station")
-            time.sleep(10)
+            self.ws.call(obs_requests.SetCurrentProgramScene(sceneName="Radio Station 2"))
+            pygame.mixer.music.load("Office_phone_ringing.mp3")
+            pygame.mixer.music.play()
+            time.sleep(4)
+            self.ws.call(obs_requests.SetCurrentProgramScene(sceneName="Radio Station"))
+            time.sleep(6)
             self.caller_blurb(blurb)
 
 
@@ -209,7 +213,7 @@ class TwitchJamSesh:
 
         # Keep it alive
         while True:
-            time.sleep(1)
+            time.sleep(5)
 
     def gen_blurb(self, text: str, file_name: str):
         voice_id = random.choice(voices)
