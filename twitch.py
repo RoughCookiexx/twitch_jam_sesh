@@ -1,35 +1,30 @@
+import asyncio
 import os
 import random
 import tempfile
 import threading
 import time
-import pyttsx3
 from datetime import datetime
 
+import pygame
 import requests
 from elevenlabs import ElevenLabs
+from obswebsocket import obsws, requests as obs_requests
 from openai import OpenAI
-from twitchAPI.object.eventsub import ChatMessage
-from twitchAPI.pubsub import PubSub
-from twitchAPI.twitch import Twitch
-from twitchAPI.oauth import UserAuthenticator
-from twitchAPI.type import AuthScope, ChatEvent
 from twitchAPI.chat import Chat, EventData
-
-import asyncio
-import pygame
-import tkinter
-import yt_dlp
-import elevenlabs
+from twitchAPI.eventsub.websocket import EventSubWebsocket
+from twitchAPI.helper import first
+from twitchAPI.oauth import UserAuthenticationStorageHelper
+from twitchAPI.object.eventsub import (ChannelPointsCustomRewardRedemptionAddEvent, ChatMessage)
+from twitchAPI.twitch import Twitch
+from twitchAPI.type import AuthScope, ChatEvent
 
 import chatgpt
 import secrets
+from clipboard_queue import ClipboardQueue
 from descriptors import generate_song_description
 from mic_input import MicInput
-from obs_timer import ObsTimer
-from obswebsocket import obsws, requests as obs_requests
 
-from clipboard_queue import ClipboardQueue
 # from suno_doodad import SunoDoodad
 
 ALL_MESSAGES = ''
@@ -65,6 +60,8 @@ class TwitchJamSesh:
         # Connect to OBS
         self.ws = obsws(self.obs_host, self.obs_port, self.obs_password)
         self.ws.connect()
+
+        self.user_id = None
 
         self.clipboard_queue = ClipboardQueue()
 
@@ -189,31 +186,34 @@ class TwitchJamSesh:
     def twitch_listener_thread(self):
         self.run_coroutine(self.listen_to_redemptions())
 
-    async def listen_to_redemptions(self, TARGET_CHANNEL_ID=None):
+    async def on_eventsub_redemption(self, data: ChannelPointsCustomRewardRedemptionAddEvent):
+        title = data.event.reward.title
+
+        if title == 'Request Song':
+            self.trigger_song_creation()
+
+    async def listen_to_redemptions(self):
+        target_scopes = [
+            AuthScope.CHAT_READ,
+            AuthScope.CHAT_EDIT,
+            AuthScope.CHANNEL_READ_REDEMPTIONS,
+            AuthScope.USER_READ_BROADCAST
+        ]
         twitch = await Twitch(secrets.CLIENT_ID, secrets.CLIENT_SECRET)
-        auth = UserAuthenticator(twitch, [AuthScope.CHAT_READ, AuthScope.CHAT_EDIT, AuthScope.CHANNEL_READ_REDEMPTIONS])
+        helper = UserAuthenticationStorageHelper(twitch, target_scopes)
+        await helper.bind()
 
-        # Authenticate the user and get the token
-        token, refresh_token = await auth.authenticate()
+        event_sub = EventSubWebsocket(twitch)
+        user = await first(twitch.get_users())
 
-        # Set the token
-        await twitch.set_user_authentication(token, [AuthScope.CHAT_READ, AuthScope.CHAT_EDIT,
-                                                     AuthScope.CHANNEL_READ_REDEMPTIONS], refresh_token)
+        event_sub.start()
 
-        pubsub = PubSub(twitch)
-        pubsub.start()
-
-        # Hook up the PubSub listener for channel points redemptions
-        uuid = await pubsub.listen_channel_points('38606166', self.on_channel_point_redemption)
-
+        await event_sub.listen_channel_points_custom_reward_redemption_add(broadcaster_user_id=user.id,
+                                                                           callback=self.on_eventsub_redemption)
         chat = await Chat(twitch)
         chat.register_event(ChatEvent.READY, self.on_ready)
         chat.register_event(ChatEvent.MESSAGE, self.read_message)
         chat.start()
-
-        # Keep it alive
-        while True:
-            time.sleep(5)
 
     def gen_blurb(self, text: str, file_name: str):
         voice_id = random.choice(voices)
