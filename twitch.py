@@ -11,13 +11,7 @@ import requests
 from elevenlabs import ElevenLabs
 from obswebsocket import obsws, requests as obs_requests
 from openai import OpenAI
-from twitchAPI.chat import Chat, EventData
-from twitchAPI.eventsub.websocket import EventSubWebsocket
-from twitchAPI.helper import first
-from twitchAPI.oauth import UserAuthenticationStorageHelper
-from twitchAPI.object.eventsub import (ChannelPointsCustomRewardRedemptionAddEvent, ChatMessage)
-from twitchAPI.twitch import Twitch
-from twitchAPI.type import AuthScope, ChatEvent
+from twitchAPI.object.eventsub import (ChannelPointsCustomRewardRedemptionAddEvent)
 
 import chatgpt
 import secrets
@@ -25,7 +19,9 @@ from clipboard_queue import ClipboardQueue
 from descriptors import generate_song_description
 from mic_input import MicInput
 
-# from suno_doodad import SunoDoodad
+import asyncio
+
+from quart import Quart, request, jsonify
 
 ALL_MESSAGES = ''
 MINUTES_BETWEEN_SONGS = 20
@@ -37,16 +33,14 @@ voices = ['iCVkdoGNYLTCRiLXC3Iu',
           'oQ2gVLvmfdFGixPqL5m2',
           'iHSDkze8smw4MQyIFKPZ',
           'Tn4bhLlhD26sndFn0Kgw',
-          'IZA1V6HYiBphGehfV21Q',
-          'YVyp28LAMQfmx8iIH88U',
           'FmJ4FDkdrYIKzBTruTkV',
           'j7KV53NgP8U4LRS2k2Gs',
           'fThYUEUmlC2mx7fgTahR',
           'ryn3WBvkCsp4dPZksMIf'
           ]
 
-class TwitchJamSesh:
 
+class TwitchJamSesh:
 
     def __init__(self):
         self.song_description = []
@@ -58,59 +52,58 @@ class TwitchJamSesh:
         self.obs_password = "XYWYGiiqfZl1rXlU"  # Replace with your OBS WebSocket password
 
         # Connect to OBS
-        self.ws = obsws(self.obs_host, self.obs_port, self.obs_password)
-        self.ws.connect()
+        while True:
+            try:
+                self.ws = obsws(self.obs_host, self.obs_port, self.obs_password)
+                self.ws.connect()
+            except:
+                time.sleep(10)
+            finally:
+                break
 
         self.user_id = None
 
         self.clipboard_queue = ClipboardQueue()
 
-    def begin(self):
+    async def begin(self):
         mic_input = MicInput(self.song_description)
 
-        threads = [
-            threading.Thread(target=mic_input.listen_for_keyword),
-            threading.Thread(target=self.twitch_listener_thread),
-            threading.Thread(target=self.clipboard_queue.monitor_paste)
+        tasks = [
+            # asyncio.create_task(mic_input.listen_for_keyword()),
+            asyncio.create_task(self.listen_to_redemptions()),
+            asyncio.create_task(self.clipboard_queue.monitor_paste()),
+            asyncio.create_task(app.run_task(host='0.0.0.0', port=6973))
         ]
-        # Start all the threads
-        for thread in threads:
-            thread.start()
+        await asyncio.gather(*tasks)
 
-        # Join threads to wait for them to finish
-        for thread in threads:
-            thread.join()
+    async def read_message(self, message):
 
-    async def read_message(self, message: ChatMessage):
-
-        if 'Cheer' in message.text:
+        if 'Cheer' in message:
             return
 
-        filtered_message = message.text  # Start with the full message
+        # filtered_message = message.text  # Start with the full message
 
-        if message.emotes:
-            # Sort the emotes by start_position to remove them in reverse order
-            sorted_emotes = sorted(message.emotes.values(), key=lambda e: int(e[0]['start_position']), reverse=True)
+        # if message.emotes:
+        #     # Sort the emotes by start_position to remove them in reverse order
+        #     sorted_emotes = sorted(message.emotes.values(), key=lambda e: int(e[0]['start_position']), reverse=True)
+        #
+        #     # Loop through each emote in reverse order and remove it from the message
+        #     for emote in sorted_emotes:
+        #         start_pos = int(emote[0]['start_position']) - 1
+        #         end_pos = int(emote[0]['end_position']) + 1
+        #
+        #         # Remove the emote from the message
+        #         filtered_message = filtered_message[:start_pos] + filtered_message[end_pos:]
 
-            # Loop through each emote in reverse order and remove it from the message
-            for emote in sorted_emotes:
-                start_pos = int(emote[0]['start_position'])-1
-                end_pos = int(emote[0]['end_position'])+1
+        print(message)
+        self.song_description.append(message)
 
-                # Remove the emote from the message
-                filtered_message = filtered_message[:start_pos] + filtered_message[end_pos:]
-
-        print(filtered_message)
-        self.song_description.append(message.text)
-
-
-    async def on_channel_point_redemption(self, uuid: str, data: dict) -> None:
-        message = data.get('data').get('redemption').get('user_input')
-        event = data.get('data').get('redemption').get('reward').get('title')
+    async def on_channel_point_redemption(self, data: dict) -> None:
+        event = data['event']['event']['reward']['title']
         if event == 'Request Song':
-            self.trigger_song_creation()
+            await self.trigger_song_creation()
 
-    def trigger_song_creation(self):
+    async def trigger_song_creation(self):
         try:
             lyrics = chatgpt.send_message_to_chatgpt(
                 f"Take the contents from below, and turn it into a short song. Create the lyrics for us in your own words."
@@ -149,10 +142,10 @@ class TwitchJamSesh:
             self.ws.call(obs_requests.SetCurrentProgramScene(sceneName="Radio Station 2"))
             pygame.mixer.music.load("Office_phone_ringing.mp3")
             pygame.mixer.music.play()
-            time.sleep(4)
+            await asyncio.sleep(4)
             self.ws.call(obs_requests.SetCurrentProgramScene(sceneName="Radio Station"))
-            time.sleep(6)
-            self.caller_blurb(blurb)
+            await asyncio.sleep(6)
+            await self.caller_blurb(blurb)
 
 
         except Exception as e:
@@ -161,61 +154,49 @@ class TwitchJamSesh:
         finally:
             self.song_description = []
 
-    def caller_blurb(self, message):
+    async def caller_blurb(self, message):
         filename = f'{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.mp3'
-        self.gen_blurb(message, filename)
+        await self.gen_blurb(message, filename)
         pygame.mixer.music.load(filename)
         pygame.mixer.music.play()
 
-    def change_scene(self, scene_name):
+    async def change_scene(self, scene_name):
         pygame.mixer.music.load("Office_phone_ringing.mp3")
         pygame.mixer.music.play()
         self.ws.call(obs_requests.SetCurrentProgramScene(sceneName=scene_name))
-        time.sleep(2)
+        await asyncio.sleep(2)
         pygame.mixer.music.play()
-
-    async def on_ready(self, ready_event: EventData):
-        await ready_event.chat.join_room('roughcookie')
-
-    def run_coroutine(self, coroutine):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(coroutine)
-        loop.close()
-
-    def twitch_listener_thread(self):
-        self.run_coroutine(self.listen_to_redemptions())
 
     async def on_eventsub_redemption(self, data: ChannelPointsCustomRewardRedemptionAddEvent):
         title = data.event.reward.title
 
         if title == 'Request Song':
-            self.trigger_song_creation()
+            await self.trigger_song_creation()
 
     async def listen_to_redemptions(self):
-        target_scopes = [
-            AuthScope.CHAT_READ,
-            AuthScope.CHAT_EDIT,
-            AuthScope.CHANNEL_READ_REDEMPTIONS,
-            AuthScope.USER_READ_BROADCAST
-        ]
-        twitch = await Twitch(secrets.CLIENT_ID, secrets.CLIENT_SECRET)
-        helper = UserAuthenticationStorageHelper(twitch, target_scopes)
-        await helper.bind()
+        response = requests.post('http://127.0.0.1:6969/subscribe/event',
+                                 json={"callback_url": 'http://127.0.0.1:6973/spin',
+                                       "subscriptions": ['ChannelPointsCustomRewardRedemptionAddEvent']})
 
-        event_sub = EventSubWebsocket(twitch)
-        user = await first(twitch.get_users())
+        if response.status_code == 201:
+            print("good job!")
+        else:
+            print('bad job...')
 
-        event_sub.start()
+        response = requests.post('http://127.0.0.1:6969/subscribe/chat',
+                                 json={"callback_url": 'http://127.0.0.1:6973/mutter'})
 
-        await event_sub.listen_channel_points_custom_reward_redemption_add(broadcaster_user_id=user.id,
-                                                                           callback=self.on_eventsub_redemption)
-        chat = await Chat(twitch)
-        chat.register_event(ChatEvent.READY, self.on_ready)
-        chat.register_event(ChatEvent.MESSAGE, self.read_message)
-        chat.start()
+        if response.status_code == 201:
+            print("good job!")
+        else:
+            print('bad job...')
 
-    def gen_blurb(self, text: str, file_name: str):
+        # Keep it alive
+        # print('Keeping Trombone alive...\n')
+        # while True:
+        #     await asyncio.sleep(0)
+
+    async def gen_blurb(self, text: str, file_name: str):
         voice_id = random.choice(voices)
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         response = requests.post(url, json={"text": text}, headers={"xi-api-key": secrets.ELEVENLABS_API_KEY})
@@ -227,14 +208,43 @@ class TwitchJamSesh:
 
             pygame.mixer.music.load(temp_audio_path)
             pygame.mixer.music.play()
-            time.sleep(30)
+            await asyncio.sleep(30)
             os.remove(temp_audio_path)
         else:
             print("Error:", response.text)
 
 
+app = Quart(__name__)
+
+
+@app.route('/spin', methods=['POST'])
+async def handle_events():
+    data = await request.get_json()
+
+    if not input:
+        return jsonify({"error": "Missing user_name"}), 400
+
+    asyncio.create_task(jam_sesh.on_channel_point_redemption(data))
+
+    return 'success', 200
+
+
+@app.route('/mutter', methods=['POST'])
+async def listen_to_chat():
+    data = await request.get_json()
+    message = data.get("message")
+
+    if not message:
+        return jsonify({"error": "Missing message"}), 400
+
+    await jam_sesh.read_message(message)
+
+    return 'success', 200
+
+
+pygame.mixer.init()
+client = OpenAI(api_key=secrets.CHAT_GPT_API_KEY)
+jam_sesh = TwitchJamSesh()
+
 if __name__ == '__main__':
-    pygame.mixer.init()
-    client = OpenAI(api_key=secrets.CHAT_GPT_API_KEY)
-    jam_sesh = TwitchJamSesh()
-    jam_sesh.begin()
+    asyncio.run(jam_sesh.begin())

@@ -1,3 +1,5 @@
+import asyncio
+
 import pyperclip
 import time
 import keyboard
@@ -20,11 +22,11 @@ class ClipboardQueue:
             print(f"Copied to clipboard: {next_text}")
 
     # Function to monitor for paste action
-    def monitor_paste(self):
+    async def monitor_paste(self):
         print("Press 'ctrl+v' to trigger paste (and update clipboard with next item)...")
         while True:
+            await asyncio.sleep(0.2)
             if keyboard.is_pressed('ctrl+v'):
-                time.sleep(0.2)  # Prevent multiple triggers from a single press
                 self.update_clipboard()
 
 

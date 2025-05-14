@@ -11,7 +11,7 @@ def send_message_to_chatgpt(message, client, temperature=0.8):
         {"role": "user", "content": message}
     )
 
-    response = client.chat.completions.create(model='gpt-3.5-turbo',
+    response = client.chat.completions.create(model='gpt-4.1-mini-2025-04-14',
                                         messages=messages,
                                         max_tokens=500,
                                         temperature=temperature)
